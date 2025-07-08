@@ -1,0 +1,1009 @@
+---
+title: "How Marine Protected Areas Shape Habitat Complexity: Interactions Among Algal Communities, Herbivores, and Predators."
+author: "Thouroude et al."
+format: 
+  html:
+    code-fold: true
+toc: true
+---
+
+# Packages
+
+```{r packages, warning=FALSE, message=FALSE}
+require(tidyverse)
+require(rstatix)
+require(ggh4x)
+require(ggtext)
+require(multcompView)
+require(ggpubr)
+require(ggforce)
+```
+
+# Import data
+
+```{r data , warning=FALSE, message=FALSE}
+
+raw <- readxl::read_xlsx("data/raw_data.xlsx", sheet = 1)
+
+# Macroalgal stratum data frame
+
+algae <- 
+   raw |> 
+   group_by(Date,
+            Protection,
+            Site, 
+            Quadrat, 
+            Diver, 
+            Depth, 
+            Inclinaison, 
+            Cysto, 
+            Arborescent, 
+            Shrubby, 
+            Turf, 
+            Barren, 
+            Caul,
+            Species) |>
+   count() |> 
+   ungroup() %>%
+   pivot_wider(names_from = Species,
+               values_from = n,
+               values_fill = 0) %>%
+   select(Date, Protection, Site, Quadrat, Diver, Cysto, Arborescent, Shrubby, Turf, Barren, Caul)
+
+# Sea urchins density
+
+density <- raw |> 
+   group_by(Date,
+            Protection,
+            Site, 
+            Quadrat, 
+            Diver, 
+            Depth, 
+            Inclinaison,
+            Boulders, 
+            Crevices,
+            Cysto, 
+            Arborescent, 
+            Shrubby, 
+            Turf, 
+            Barren, 
+            Caul,
+            Species) |>
+   count() |> 
+   ungroup() %>%
+   pivot_wider(names_from = Species,
+               values_from = n,
+               values_fill = 0) %>%
+   select(-c(`NA`, Sphaerechinus_granularis)) %>%
+   pivot_longer(
+      cols = c(
+         Arbacia_lixula,
+         Paracentrotus_lividus
+      ),
+      names_to = "Species",
+      values_to = "Density"
+   )
+
+# Sea urchins size data frame
+
+Size <- raw |> 
+   filter(!is.na(Size), 
+          Species != 'Sphaerechinus_granularis')
+
+# Sea urchins biomass data frame
+
+raw$Size[is.na(raw$Species)] = 0
+raw$Species[is.na(raw$Species)] = "NA"
+raw$biom[raw$Species == 'Paracentrotus_lividus'] <-
+   0.00319 * ((10 * raw$Size[raw$Species == 'Paracentrotus_lividus']) ** 2.479)
+raw$biom[raw$Species == 'Arbacia_lixula'] <-
+   0.8467 * ((raw$Size[raw$Species  == 'Arbacia_lixula']) ** 2.6042)
+
+biomass <- 
+   raw |> 
+    group_by(Date,
+            Protection,
+            Site, 
+            Quadrat, 
+            Diver, 
+            Depth, 
+            Inclinaison,
+            Boulders, 
+            Crevices,
+            Cysto, 
+            Arborescent, 
+            Shrubby, 
+            Turf, 
+            Barren, 
+            Caul,
+            Species) |> 
+   summarise(biom = sum(biom), .groups = 'drop') %>%
+   pivot_wider(names_from = Species,
+               values_from = biom,
+               values_fill = 0) |>
+   select(-c(`NA`, Sphaerechinus_granularis)) |> 
+   pivot_longer(
+      cols = c(
+         Arbacia_lixula,
+         Paracentrotus_lividus
+      ),
+      names_to = "Species",
+      values_to = "Biomass"
+   )
+```
+
+# Macroalgal cover
+
+## Figure 2
+
+```{r}
+
+number_quad <- algae |>
+   group_by(Site) |> count() |>
+   mutate(Site_rec = paste0('**',Site,'**',' (N=', n, ')'))
+
+full_join(algae, number_quad) |>
+   select(-`n`) |>
+   mutate(seq = seq(1:nrow(algae))) |>
+   pivot_longer(cols = c(6:11),
+                names_to = "stratum",
+                values_to = 'cover') |>
+   mutate(
+      Protection_rec = case_when(
+         Protection == "FZ" ~ '**Fishing zone**',
+         Protection == 'NTZ' ~ '**No-take zone**'
+      ),
+      stratum_rec = case_when(
+         stratum == 'Barren' ~ "Encrusting/Barren",
+         stratum == 'Caul' ~ '<i>Caulerpa cylindracea<i>',
+         .default = stratum
+      )
+   ) |>
+   ggplot(aes(
+      x = as.factor(seq),
+      y = cover,
+      fill = factor(
+         stratum_rec,
+         levels = c(
+            "Arborescent",
+            "Shrubby",
+            "Turf",
+            "Encrusting/Barren",
+            "<i>Caulerpa cylindracea<i>"
+         )
+      ),
+      colour = factor(
+         stratum_rec,
+         levels = c(
+            "Arborescent",
+            "Shrubby",
+            "Turf",
+            "Encrusting/Barren",
+            "<i>Caulerpa cylindracea<i>"
+         )
+      ))) +
+         geom_bar(position = 'stack', stat = "identity") +
+         facet_grid( ~ Site, scale = 'free_x')+
+   geom_bar(position = "stack",
+            stat = "identity",
+            width = 1) +
+   scale_fill_manual(
+      values = c(
+         "#226060FF" ,
+         "#639CA4FF" ,
+         "#D2AD7CFF" ,
+         "#BE7245FF",
+         "#46211CFF"
+      ),
+      name = "Algae stratum:",
+      breaks =  c(
+         "Arborescent",
+         "Shrubby",
+         "Turf",
+         "Encrusting/Barren",
+         "<i>Caulerpa cylindracea<i>"
+      )
+   ) +
+   scale_color_manual(
+      values = c(
+         "#226060FF" ,
+         "#639CA4FF" ,
+         "#D2AD7CFF" ,
+         "#BE7245FF",
+         "#46211CFF"
+      ),
+      name = "Algae stratum:",
+      breaks =  c(
+         "Arborescent",
+         "Shrubby",
+         "Turf",
+         "Encrusting/Barren",
+         "<i>Caulerpa cylindracea<i>"
+      )
+   ) +
+   
+   theme_classic()+
+   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+   ylab('Percent cover (%)') +
+   xlab("") +
+   theme(
+      legend.position = 'top',
+      legend.box = "horizontal",
+      legend.box.margin = margin(0, 0, 0, 0, "cm")
+   ) +
+   scale_y_continuous(expand = c(0, 0), limits = c(0, NA)) +
+   guides(fill = guide_legend(nrow = 1)) +
+   ggh4x::facet_nested_wrap(Protection_rec ~ Site_rec,
+   scale = 'free_x',
+   ncol = 5) +
+   theme(
+      strip.text = element_markdown(size = 10),
+      legend.text = element_markdown(size = 10),
+      legend.title = element_markdown(size = 10),
+      axis.title.y = element_markdown(
+         size = 11,
+         angle = 90,
+         hjust = 0.6
+      )
+   )
+ggsave(
+   "Figures/Figure_2/Figure_.pdf",
+   width = 7.82,
+   height = 4.49,
+   units = "in",
+   create.dir = TRUE
+   )
+
+ggsave(
+   "Figures/Figure_2/Figure_2.png",
+   width = 7.82,
+   height = 4.49,
+   units = "in",,
+   dpi = 500,
+   create.dir = TRUE
+   )
+```
+
+## Table 1
+
+```{r table-1, message = F, warning=FALSE}
+
+algae|>
+   pivot_longer(cols = c(6:11),
+                names_to = "stratum",
+                values_to = 'cover') |> 
+   filter(stratum != 'Cysto') |> 
+   group_by(stratum) |> 
+   wilcox_test(cover~Protection)
+
+```
+
+# Sea urchins
+
+## Sea urchins density
+
+```{r}
+wilcox.test.density <- 
+   density |> 
+   group_by(Species) |>
+   rstatix::wilcox_test(Density~Protection) 
+
+wilcox.test.density
+
+kruskal.test.density <- 
+   density |> 
+   group_by(Species) |>
+   rstatix::kruskal_test(Density~Site) 
+
+kruskal.test.density
+```
+
+### Figure 3
+
+```{r figure-3, message=FALSE, warning=FALSE}
+
+l <- density |>
+   filter(Species== "Paracentrotus_lividus") |> 
+   group_by(Species) |>
+   rstatix::dunn_test(Density~Site, p.adjust.method = 'bonferroni') |> 
+   add_significance() |> 
+   ungroup() |>
+   mutate(comp = paste0(group1, "-", group2)) |>
+   pull(p.adj, comp) |>
+   multcompLetters()
+
+pl <- as.data.frame(l$Letters) |> 
+   rownames_to_column() |> 
+   mutate(Site = rowname, 
+          Species = "*Paracentrotus lividus*", 
+          letters = `l$Letters`) |> 
+   select(-c(rowname, `l$Letters`))
+
+l2 <- density |>
+   filter(Species== "Arbacia_lixula") |> 
+   group_by(Species) |>
+   rstatix::dunn_test(Density~Site, p.adjust.method = 'bonferroni') |> 
+   add_significance() |> 
+   ungroup() |>
+   mutate(comp = paste0(group1, "-", group2)) |>
+   pull(p.adj, comp) |>
+   multcompLetters()
+
+al <- as.data.frame(l2$Letters) |> 
+   rownames_to_column() |> 
+   mutate(Site = rowname, 
+          Species = "*Arbacia lixula*", 
+          letters = `l2$Letters`) |> 
+   select(-c(rowname, `l2$Letters`))
+
+letters <- full_join(pl, al)
+
+full_join(density, number_quad) |> 
+   group_by(Protection, Site, Site_rec, Species) |> 
+   get_summary_stats(Density, type = 'mean_se') |> 
+   mutate(Protection = case_when(Protection =='FZ'~'Fishing zone', 
+                                 .default = 'No-take zone'),
+          Species = case_when(Species =='Arbacia_lixula'~ "*Arbacia lixula*", 
+                              .default = "*Paracentrotus lividus*")) |> 
+   full_join(letters) |> 
+   ggplot(aes(x = Site_rec, y = mean, fill = Species))+
+   geom_col(position = "dodge",
+            width = 0.6,
+            col = "black")+
+   geom_errorbar(aes(ymin = mean -se, ymax = mean + se), width = 0.6)+
+   scale_fill_manual(values = c('#444444','#c5c5c5'))+
+   scale_y_continuous(
+      minor_breaks = seq(0, 4.5, by = 0.5),
+      guide = "axis_minor",
+      expand = c(0, 0),
+      limits = c(0, 4.5)
+   ) +
+   geom_text(aes(x = Site_rec, y = (mean+se)+0.2, label = letters))+
+   theme_classic2() +
+   labs(x = '', y ="Sea urchins mean density ± SE <br>(ind m<sup>-2</sup> )")+
+   theme(
+      axis.text.x = element_markdown(size = 10, color = 'black', angle = 90, hjust = 1, vjust = 0.5),
+      legend.text = element_markdown(size = 10),
+      # strip.text.x = element_markdown(),
+      axis.title.y = element_markdown(),
+      legend.position = 'none',
+      panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey"),
+      panel.grid.minor.y = element_line(linetype = "dotted", color = "grey"),
+      panel.spacing = unit(-0.1, "cm"), 
+      strip.text = element_markdown(face = 'bold')
+   ) +
+   facet_nested( ~Species+Protection, scales = 'free_x', nest_line = TRUE)
+
+ggsave(
+   "Figures/Figure_3/Figure_3.pdf",
+   width = 7.5,
+   height = 4,
+   units = "in",
+   create.dir = TRUE
+)
+
+ggsave(
+   "Figures/Figure_3/Figure_3.png",
+   width = 7.5,
+   height = 4,
+   units = "in",
+   dpi = 500,
+   create.dir = TRUE
+)
+
+```
+
+### Topographical characteristics
+
+```{r}
+
+density |> 
+   mutate(topography = as.factor(paste0(Inclinaison, Boulders, Crevices))) |> 
+   group_by(Species) |> 
+   kruskal_test(Density~topography)
+
+density |> 
+   mutate(topography = as.factor(paste0(Inclinaison, Boulders, Crevices)),
+          shelters = case_when(topography %in% c("010", "Sub_vertical01","vertical01")~'yes',
+                               .default = 'no')) |> 
+   group_by(Species, Protection) |> 
+   wilcox_test(Density~shelters)
+
+density |> 
+   mutate(topography = as.factor(paste0(Inclinaison, Boulders, Crevices)),
+          vert = case_when(topography %in% c("vertical00","vertical01")~'yes',
+                               .default = 'no')) |> 
+   group_by(Species, Protection) |> 
+   wilcox_test(Density~vert)
+
+```
+
+## Sea urchins size
+
+### Figure 4
+
+r_```{r}
+
+
+l <- Size |>
+   filter(Species == 'Arbacia_lixula') |> 
+   group_by(Species) |>
+   rstatix::dunn_test(Size~Site, p.adjust.method = 'bonferroni') |> 
+   add_significance() |> 
+   ungroup() |>
+   mutate(comp = paste0(group1, "-", group2)) |>
+   pull(p.adj, comp) |>
+   multcompLetters()
+
+
+al <- as.data.frame(l$Letters) |> 
+   rownames_to_column() |> 
+   mutate(Site = rowname, 
+          Species = "*Arbacia lixula*", 
+          letters = `l$Letters`) |> 
+   select(-c(rowname, `l$Letters`))
+
+l2 <- Size |>
+   filter(Species == 'Paracentrotus_lividus') |> 
+   group_by(Species) |>
+   rstatix::dunn_test(Size~Site, p.adjust.method = 'bonferroni') |> 
+   add_significance() |> 
+   ungroup() |>
+   mutate(comp = paste0(group1, "-", group2)) |>
+   pull(p.adj, comp) |>
+   multcompLetters()
+
+
+pl <- as.data.frame(l2$Letters) |> 
+   rownames_to_column() |> 
+   mutate(Site = rowname, 
+          Species = "*Paracentrotus lividus*", 
+          letters = `l2$Letters`) |> 
+   select(-c(rowname, `l2$Letters`))
+
+letters <- full_join(al, pl)
+
+nsize <- Size |> 
+   group_by(Protection, Species, Site) |> 
+   get_summary_stats(Size, type = "common") |> 
+   mutate(Site_rec = paste0("**",Site, '** (n=', n, ')')) |> 
+   select(-n) |> 
+   mutate(Species = case_when(Species == "Paracentrotus_lividus"~'*Paracentrotus lividus*', 
+                              .default = '*Arbacia lixula*'),
+          Protection = case_when(Protection == 'NTZ' ~ "No-take zone", 
+                                 .default = 'Fishing zone'))
+
+letters <- full_join(nsize, letters)
+
+nise2 <- Size |> 
+   group_by(Protection, Species, Site) |> 
+   count()|> 
+   mutate(Site_rec = paste0("**",Site, '** (n=', n, ')'))
+
+
+full_join(Size, nise2) |>
+   mutate(Species = case_when(Species == "Paracentrotus_lividus"~'*Paracentrotus lividus*', 
+                           .default = '*Arbacia lixula*'),
+          Protection = case_when(Protection == 'NTZ' ~ "No-take zone", 
+                                 .default = 'Fishing zone')) |> 
+   ggplot(aes(x = Site_rec, y = Size))+
+   geom_boxplot(outlier.alpha = 0)+
+   geom_sina(shape = 1, alpha =  0.5, size = .3)+
+   theme_classic()+
+   geom_text(data = letters, aes(x = Site_rec, y = max+1, label = letters), inherit.aes = F)+
+   labs(x = '', y = 'Sea urchins (cm)')+
+   facet_nested(~Species + Protection, scales = 'free_x') +
+   theme(
+      axis.text.x = element_markdown(size = 10, color = 'black', angle = 90, hjust = 1, vjust = 0.5),
+      legend.text = element_markdown(size = 10),
+      strip.text.x = element_text(size = 11),
+      axis.title.y = element_markdown(),
+      legend.position = 'none',
+      panel.grid.major.y = element_line(linetype = "dotted", color = "grey"),
+      panel.grid.minor.y = element_line(linetype = "dotted", color = "lightgrey"),
+      strip.text = element_markdown(face = 'bold'),
+      panel.spacing = unit(-0.1, "cm")
+   )+
+   scale_y_continuous(
+      minor_breaks = seq(0, 10, by = 1.25),
+      guide = "axis_minor",
+      expand = c(0, 0),
+      limits = c(0, 10)
+   )
+
+ggsave(
+   "Figures/Figure_4/Figure_4.pdf",
+   width = 7.5,
+   height = 4,
+   units = "in",
+   create.dir = TRUE
+)
+
+ggsave(
+   "Figures/Figure_4/Figure_4.png",
+   width = 7.5,
+   height = 4,
+   units = "in",
+   dpi =500,
+   create.dir = TRUE
+)
+
+```
+
+```{r}
+Size |> 
+   group_by(Species) |> 
+   kruskal_test(Size~Site) 
+
+Size |> 
+   mutate(topography = as.factor(paste0(Inclinaison, Boulders, Crevices))) |> 
+   group_by(Species) |> 
+   kruskal_test(Size~topography)
+```
+
+### Figure 5
+
+```{r fig_5}
+
+#| echo: true
+#| message: false
+#| cap-location: bottom
+#| label: fig-densite
+#| fig-cap: "Densité [ind.m<sup>-2</sup>] des deux espèces d'oursins en fonction du site et de l'année. PL : *Paracentrotus lividus* AL: *Arbacia lixula*.  N est le nombre de quadrats. Moyenne ± SE+ 95%CI"
+#| fig-width: 10
+#| fig-height: 7
+#| fig-align: center
+Size |>
+   mutate(
+      Size_rec = cut(
+         Size,
+         include.lowest = TRUE,
+         right = FALSE,
+         dig.lab = 4,
+         breaks = c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+      ),
+      Size_rec = Size_rec |>
+         fct_recode(
+            "0" = "[0,1)",
+            "1" = "[1,2)",
+            "2" = "[2,3)",
+            "3" = "[3,4)",
+            "4" = "[4,5)",
+            "5" = "[5,6)",
+            "6" = "[6,7)",
+            "7" = "[7,8)"
+         )
+   ) |>
+   group_by(Species, Protection, Size_rec) |>
+   count() |>
+   ungroup() |>
+   group_by(Species, Protection) |>
+   
+   mutate(freq = (n /sum(n))*100,
+          Protection = case_when(Protection == 'NTZ' ~ 'No-take zone', .default = 'Fishing zone'),
+          Species = case_when(Species == 'Arbacia_lixula' ~ '*Arbacia lixula*', .default = '*Paracentrotus lividus*')
+   ) |> 
+   ggplot(aes(x = Size_rec, y = freq, fill = Species))+
+   geom_col(col ='black', width = 1)+
+   scale_fill_manual(values = c('#5b5b5b', '#c5c5c5'))+
+   theme_classic()+
+   labs(x="Size class (cm)", y = "Relative abundance (%)")+
+   scale_y_continuous(
+      expand = c(0, 0),
+      limits = c(0, 55), 
+      breaks = c(0, 20, 40),
+   )+
+   geom_text(data = tibble(Species = c(rep('*Arbacia lixula*',2),rep('*Paracentrotus lividus*',2)),
+                           Protection = rep(c('No-take zone', 'Fishing zone'), 2),
+                           label = c('n = 178', 'n = 122', 'n = 479', 'n = 418')),
+            aes(x = 2, y = 50, label = label)) +
+   theme(
+      strip.text.x = element_markdown(face = 'bold'),
+      legend.position = 'none',
+      panel.grid.major.y = element_line(linetype = "dotted", color = "grey"),
+      panel.grid.minor.y = element_line(linetype = "dotted", color = "lightgrey")
+   ) +
+   facet_nested(~Species+Protection)
+
+ggsave(
+   "Figures/Figure_5/Figure_5.pdf",
+   width = 7.5,
+   height = 3,
+   units = "in",
+   create.dir = TRUE
+)
+
+ggsave(
+   "Figures/Figure_5/Figure_5.png",
+   width = 7.5,
+   height = 3,
+   units = "in",
+   dpi =500,
+   create.dir = TRUE
+)
+   
+```
+
+## Sea urchins biomass
+
+```{r}
+l <- biomass |>
+   filter(Species== "Paracentrotus_lividus") |> 
+   group_by(Species) |>
+   rstatix::dunn_test(Biomass~Site, p.adjust.method = 'bonferroni') |> 
+   add_significance() |> 
+   ungroup() |>
+   mutate(comp = paste0(group1, "-", group2)) |>
+   pull(p.adj, comp) |>
+   multcompLetters()
+
+pl <- as.data.frame(l$Letters) |> 
+   rownames_to_column() |> 
+   mutate(Site = rowname, 
+          Species = "*Paracentrotus lividus*", 
+          letters = `l$Letters`) |> 
+   select(-c(rowname, `l$Letters`))
+
+l2 <- biomass |>
+   filter(Species== "Arbacia_lixula") |> 
+   group_by(Species) |>
+   rstatix::dunn_test(Biomass~Site, p.adjust.method = 'bonferroni') |> 
+   add_significance() |> 
+   ungroup() |>
+   mutate(comp = paste0(group1, "-", group2)) |>
+   pull(p.adj, comp) |>
+   multcompLetters()
+
+al <- as.data.frame(l2$Letters) |> 
+   rownames_to_column() |> 
+   mutate(Site = rowname, 
+          Species = "*Arbacia lixula*", 
+          letters = `l2$Letters`) |> 
+   select(-c(rowname, `l2$Letters`))
+
+letters <- full_join(al, pl)
+
+biomass |> 
+   group_by(Protection, Species, Site) |> 
+   get_summary_stats(Biomass, type = 'common') |> 
+   mutate(Protection = case_when(Protection =='NTZ'~'No-take zone', .default = 'Fishing zone'),
+          Species = case_when(Species =='Arbacia_lixula' ~'*Arbacia lixula*', .default = '*Paracentrotus lividus*'), 
+          Site_rec = paste0('**', Site, '** (N=', n, ')')) |> 
+   full_join(letters) |> 
+   ggplot(aes(x = Site_rec, y = mean, fill = Species))+
+   geom_col(position = "dodge",
+            width = 0.6,
+            col = "black")+
+   geom_errorbar(aes(ymin = mean -se, ymax = mean + se), width = 0.6)+
+   scale_fill_manual(values = c('#444444','#c5c5c5'))+
+   scale_y_continuous(
+      minor_breaks = seq(0, 170, by = 20),
+      guide = "axis_minor",
+      expand = c(0, 0),
+      limits = c(0, 170)
+   ) +
+   geom_text(aes(x = Site_rec, y = (mean+se)+8, label = letters))+
+   theme_classic2() +
+   labs(x = '', y ="Sea urchins mean biomass ± SE <br>(g m<sup>-2</sup> )")+
+   theme(
+      axis.text.x = element_markdown(size = 10, color = 'black', angle = 90, hjust = 1, vjust = 0.5),
+      legend.text = element_markdown(size = 10),
+      # strip.text.x = element_markdown(),
+      axis.title.y = element_markdown(),
+      legend.position = 'none',
+      panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey"),
+      panel.grid.minor.y = element_line(linetype = "dotted", color = "grey"),
+      panel.spacing = unit(-0.05, "cm"), 
+      strip.text = element_markdown(face = 'bold')
+   ) +
+   facet_nested( ~Species+Protection, scales = 'free_x', nest_line = TRUE)
+
+ggsave(
+   "Figures/Figure_6/Figure_6.pdf",
+   width = 7.5,
+   height = 4,
+   units = "in",
+   create.dir = TRUE
+)
+
+ggsave(
+   "Figures/Figure_6/Figure_6.png",
+   width = 7.5,
+   height = 4,
+   units = "in",
+   dpi =500,
+   create.dir = TRUE
+)
+```
+
+```{r}
+biomass |> 
+   group_by(Species) |> 
+   wilcox_test(Biomass~Protection, alternative = 'less')
+
+biomass |> 
+   group_by(Species) |> 
+   kruskal_test(Biomass~Site)
+```
+
+### Biomass of P. lividus + A. lixula
+
+```{r}
+
+biomass |> 
+   group_by(Protection, Site, Quadrat, Diver) |>
+   summarise(sum = sum(Biomass), .groups = 'drop') |> 
+   group_by(Protection) |> 
+   get_summary_stats(sum, type = 'mean_se')
+
+biomass |> 
+   group_by(Protection, Site, Quadrat, Diver) |>
+   summarise(sum = sum(Biomass), .groups = 'drop') |> 
+   wilcox_test(sum~Protection, alternative = 'less')
+```
+
+# Fish population
+
+## Species richness
+
+```{r}
+raw_fish <- readxl::read_xlsx('data/raw_data.xlsx', sheet = 2)
+alo <- readxl::read_xlsx('data/Alo_poissons.xlsx')
+
+species <- unique(raw_fish$Species)
+
+
+fish <- alo |> 
+   filter(Species%in%species) |> 
+   full_join(raw_fish) |> 
+   select(Date, Protection, Site, Diver, Transect, Depth, Species,Trophic_group, Size, COEF_A, COEF_B) |> 
+   mutate(biomass = COEF_A*(Size**COEF_B), 
+          Species = Species |> 
+             fct_recode(
+                'Oblada_melanurus' = 'Oblada_melanura', 
+                "Centrolabrus_melanocercus" = "Symphodus_melanocercus"
+             ),
+          Trophic_group = Species |> 
+             fct_recode(
+                "Planktivorous" = "Anthias_anthias",
+                "Planktivorous" = "Apogon_imberbis",
+                "Planktivorous" = "Boops_boops",
+                "Omnivorous" = "Centrolabrus_melanocercus",
+                "Planktivorous" = "Chromis_chromis",
+                "Invertivorous" = "Coris_julis",
+                "Piscivorous" = "Dicentrarchus_labrax",
+                "Omnivorous" = "Diplodus_annularis",
+                "Omnivorous" = "Diplodus_cervinus",
+                "Omnivorous" = "Diplodus_puntazzo",
+                "Invertivorous" = "Diplodus_sargus",
+                "Invertivorous" = "Diplodus_vulgaris",
+                "Piscivorous" = "Epinephelus_marginatus",
+                "Invertivorous" = "Labrus_merula",
+                "Invertivorous" = "Labrus_viridis",
+                "Omnivorous" = "Mullus_surmuletus",
+                "Piscivorous" = "Muraena_helena",
+                "Omnivorous" = "Oblada_melanurus",
+                "Omnivorous" = "Pagellus_erythrinus",
+                "Herbivorous" = "Sarpa_salpa",
+                "Omnivorous" = "Sciaena_umbra",
+                "Piscivorous" = "Scorpaena_porcus",
+                "Piscivorous" = "Scorpaena_scrofa",
+                "Omnivorous" = "Serranus_cabrilla",
+                "Omnivorous" = "Serranus_hepatus",
+                "Omnivorous" = "Serranus_scriba",
+                "Invertivorous" = "Sparus_aurata",
+                "Planktivorous" = "Spicara_maena",
+                "Omnivorous" = "Spondyliosoma_cantharus",
+                "Omnivorous" = "Symphodus_cinereus",
+                "Omnivorous" = "Symphodus_doderleini",
+                "Invertivorous" = "Symphodus_mediterraneus",
+                "Omnivorous" = "Symphodus_ocellatus",
+                "Invertivorous" = "Symphodus_roissali",
+                "Omnivorous" = "Symphodus_rostratus",
+                "Invertivorous" = "Symphodus_tinca",
+                "Invertivorous" = "Thalassoma_pavo"
+             ))
+
+
+fish |> 
+   group_by(Protection, Site, Transect, Species) |> 
+   count() |> 
+   group_by(Protection, Site, Transect) |> 
+   count() |> 
+   group_by(Protection) |> 
+   get_summary_stats(n, type = 'common')
+
+```
+
+```{r}
+
+fish |> 
+   group_by(Protection, Site, Transect, Species) |> 
+   count() |> 
+   group_by(Protection, Site, Transect) |> 
+   count() |> 
+   ungroup() |> 
+   levene_test(n~Protection)
+
+fish |> 
+   group_by(Protection, Site, Transect, Species) |> 
+   count() |> 
+   group_by(Protection, Site, Transect) |> 
+   count() |> 
+   ungroup() |> 
+   t_test(n~Protection, var.equal = T)
+
+```
+
+```{r}
+fish_biomass <- fish |> 
+   group_by(Protection, Site, Transect, Diver, Species) |> 
+   summarise(sum = sum(biomass)) |> 
+   pivot_wider(names_from = Species, values_from = sum, values_fill = 0) |> 
+   pivot_longer(cols = c(5:41), names_to = "Species", values_to = "biomass") |> 
+   mutate(
+      Trophic_group = Species |> 
+         fct_recode(
+            "Planktivorous" = "Anthias_anthias",
+            "Planktivorous" = "Apogon_imberbis",
+            "Planktivorous" = "Boops_boops",
+            "Omnivorous" = "Centrolabrus_melanocercus",
+            "Planktivorous" = "Chromis_chromis",
+            "Invertivorous" = "Coris_julis",
+            "Piscivorous" = "Dicentrarchus_labrax",
+            "Omnivorous" = "Diplodus_annularis",
+            "Omnivorous" = "Diplodus_cervinus",
+            "Omnivorous" = "Diplodus_puntazzo",
+            "Invertivorous" = "Diplodus_sargus",
+            "Invertivorous" = "Diplodus_vulgaris",
+            "Piscivorous" = "Epinephelus_marginatus",
+            "Invertivorous" = "Labrus_merula",
+            "Invertivorous" = "Labrus_viridis",
+            "Omnivorous" = "Mullus_surmuletus",
+            "Piscivorous" = "Muraena_helena",
+            "Omnivorous" = "Oblada_melanurus",
+            "Omnivorous" = "Pagellus_erythrinus",
+            "Herbivorous" = "Sarpa_salpa",
+            "Omnivorous" = "Sciaena_umbra",
+            "Piscivorous" = "Scorpaena_porcus",
+            "Piscivorous" = "Scorpaena_scrofa",
+            "Omnivorous" = "Serranus_cabrilla",
+            "Omnivorous" = "Serranus_hepatus",
+            "Omnivorous" = "Serranus_scriba",
+            "Invertivorous" = "Sparus_aurata",
+            "Planktivorous" = "Spicara_maena",
+            "Omnivorous" = "Spondyliosoma_cantharus",
+            "Omnivorous" = "Symphodus_cinereus",
+            "Omnivorous" = "Symphodus_doderleini",
+            "Invertivorous" = "Symphodus_mediterraneus",
+            "Omnivorous" = "Symphodus_ocellatus",
+            "Invertivorous" = "Symphodus_roissali",
+            "Omnivorous" = "Symphodus_rostratus",
+            "Invertivorous" = "Symphodus_tinca",
+            "Invertivorous" = "Thalassoma_pavo"
+         )
+   )
+
+
+
+l <- fish_biomass |> 
+   group_by(Protection, Site, Transect) |> 
+   summarise(sum = sum(biomass)/1000,.groups = 'drop') |> 
+   rstatix::dunn_test(sum~Site, p.adjust.method = 'bonferroni') |> 
+   add_significance() |> 
+   ungroup() |>
+   mutate(comp = paste0(group1, "-", group2)) |>
+   pull(p.adj, comp) |>
+   multcompLetters()
+
+letters <- as.data.frame(l$Letters) |> 
+   rownames_to_column() |> 
+   mutate(Site = rowname, 
+          letters = `l$Letters`) |> 
+   select(-c(rowname, `l$Letters`))
+
+fish_biomass |> 
+   group_by(Protection, Site, Transect) |> 
+   summarise(sum = sum(biomass)/1000,.groups = 'drop') |> 
+   group_by(Protection, Site) |> 
+   get_summary_stats(sum, type = 'common') |> 
+   full_join(letters) |> 
+   mutate(Site_rec = paste0('**', Site, '** (N=', n, ')'), 
+          Protection = case_when(Protection =='NTZ'~'No-take zone', .default = 'Fishing zone')) |> 
+   ggplot(aes(x = Site_rec, y = mean))+
+   geom_col(position = "dodge",
+            width = 0.6,
+            col = "black")+
+   geom_errorbar(aes(ymin = mean -se, ymax = mean + se), width = 0.6)+
+   geom_text(aes(x = Site_rec, y = (mean+se)+3, label = letters))+
+   scale_y_continuous(
+      minor_breaks = seq(0,60, by = 20),
+      guide = "axis_minor",
+      expand = c(0, 0),
+      limits = c(0, 60)
+   ) +
+   theme_classic2() +
+   labs(x = '', y ="mean teleost biomass<br>per transect ± SE <br>(kg 100 m<sup>-2</sup> )")+
+   theme(
+      axis.text.x = element_markdown(size = 10, color = 'black', angle = 90, hjust = 1, vjust = 0.5),
+      legend.text = element_markdown(size = 10),
+      axis.title.y = element_markdown(),
+      legend.position = 'none',
+      panel.grid.major.y = element_line(linetype = "dotted", color = "darkgrey"),
+      panel.grid.minor.y = element_line(linetype = "dotted", color = "grey"),
+      panel.spacing = unit(-0.1, "cm"), 
+      strip.text = element_markdown(face = 'bold')
+   ) +
+   facet_nested( ~Protection, scales = 'free_x', nest_line = TRUE)
+
+ggsave(
+   "Figures/Figure_7/Figure_7_a.pdf",
+   width = 7.5,
+   height = 4,
+   units = "in",
+   create.dir = TRUE
+)
+
+ggsave(
+   "Figures/Figure_7/Figure_7_a.png",
+   width = 7.5,
+   height = 4,
+   units = "in",
+   dpi =500,
+   create.dir = TRUE
+)
+
+```
+
+```{r}
+fish_biomass|> 
+   group_by(Protection,Site, Transect, Trophic_group) |>
+   summarise(n = sum(biomass/1000), .groups = 'drop') |> 
+   group_by(Protection, Site, Transect) |> 
+   mutate(freq = n/sum(n)) |> 
+   select(-n) |> 
+   pivot_wider(names_from = Trophic_group, values_from = freq, values_fill = 0) |> 
+   pivot_longer(c(4:8), names_to = "GT", values_to = "freq") |> 
+   group_by(Protection,Site, GT) |> 
+   rstatix::get_summary_stats(freq, type = "mean_se") |> 
+   mutate(Site = paste0("**", Site, "** (N=", n, ")")) |> 
+   ggplot(aes(x=Site, y = mean*100, fill = GT)) +
+   geom_col(col = "black")+
+   labs(x="", y = 'Mean relative<br>abundance (%)')+
+   theme_classic2()+
+   scale_fill_manual(values = c('#f8f9fa','#c5c5c5','#6c6c6c','#444444', "#040404"), name = 'Trophic groups:')+
+   theme(
+      axis.text.x = element_markdown(size = 10, color = 'black', angle = 90, hjust = 1, vjust = 0.5),
+      legend.text = element_markdown(size = 10),
+      strip.text.x = element_text(size = 11),
+      axis.title.y = element_markdown(),
+      legend.position = 'right',
+      panel.grid.major.y = element_line(linetype = "dotted", color = "grey"),
+      panel.grid.minor.y = element_line(linetype = "dotted", color = "lightgrey")
+   )+
+   scale_y_continuous(
+      minor_breaks = seq(0,100 , by = 12.5),
+      guide = "axis_minor",
+      expand = c(0, 0),
+      limits = c(0, 100.2)
+   ) +
+   facet_nested(~Protection, scales = 'free_x',nest_line = TRUE)+
+   theme(panel.spacing = unit(-0.1, "cm"))
+
+ggsave(
+   "Figures/Figure_7/Figure_7_b.pdf",
+   width = 7.5,
+   height = 4,
+   units = "in",
+   create.dir = TRUE
+)
+
+ggsave(
+   "Figures/Figure_7/Figure_7_b.png",
+   width = 7.5,
+   height = 4,
+   units = "in",
+   dpi =500,
+   create.dir = TRUE
+)
+```
